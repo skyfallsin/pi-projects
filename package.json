@@ -1,0 +1,42 @@
+{
+  "name": "@askjo/pi-projects",
+  "version": "1.0.0",
+  "description": "Self-contained project directories for the pi coding agent. Each project gets ABOUT.md, MEMORY.md, AGENTS.md, CRON.md — extractable and usable by any LLM.",
+  "main": "index.ts",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "pi-coding-agent",
+    "projects",
+    "context",
+    "memory"
+  ],
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "author": "jo-inc",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jo-inc/pi-projects.git"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
