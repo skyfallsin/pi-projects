@@ -34,14 +34,73 @@ function readFileSafe(filePath: string): string | null {
 	}
 }
 
-/** Resolve a path within a project dir with traversal protection. */
-function safeResolve(baseDir: string, ...segments: string[]): string | null {
-	const resolved = path.resolve(path.join(baseDir, ...segments));
-	if (!resolved.startsWith(path.resolve(baseDir) + path.sep) && resolved !== path.resolve(baseDir)) {
+/**
+ * Resolve a file path within a project, following symlinks safely.
+ * The project slug must be a direct child of projectsDir (no slashes or ..).
+ * The file must stay within the resolved project directory.
+ */
+function resolveProjectFile(projectsDir: string, project: string, fileName: string): string | null {
+	if (project.includes("/") || project.includes("\\") || project === ".." || project === ".") {
 		return null;
 	}
-	return resolved;
+
+	const projectEntry = path.join(projectsDir, project);
+
+	let resolvedProjectDir: string;
+	try {
+		resolvedProjectDir = fs.realpathSync(projectEntry);
+	} catch {
+		return null;
+	}
+
+	const filePath = path.resolve(resolvedProjectDir, fileName);
+
+	if (!filePath.startsWith(resolvedProjectDir + path.sep) && filePath !== resolvedProjectDir) {
+		return null;
+	}
+
+	return filePath;
 }
+
+// --- Scaffold templates ---
+
+export function scaffoldAbout(name: string, description?: string): string {
+	return [
+		`# ${name}`,
+		"",
+		"## Status",
+		"active",
+		"",
+		"## Description",
+		description || "_Add a description_",
+		"",
+		"## Key Files",
+		"_Add important file paths here_",
+		"",
+		"## Context",
+		"_Add any context another LLM would need to work on this project_",
+		"",
+	].join("\n");
+}
+
+function scaffoldMemory(name: string): string {
+	return `# ${name} — Memory\n\nProject-specific decisions, facts, and preferences.\n`;
+}
+
+function scaffoldAgents(name: string): string {
+	return `# ${name} — Agent Rules\n\nProject-specific behavioral rules and conventions.\n`;
+}
+
+function scaffoldCron(name: string): string {
+	return `# ${name} — Scheduled Tasks\n\n_No scheduled tasks yet._\n`;
+}
+
+const SCAFFOLD_FILES: { name: string; template: (name: string, desc?: string) => string }[] = [
+	{ name: "ABOUT.md", template: scaffoldAbout },
+	{ name: "MEMORY.md", template: scaffoldMemory },
+	{ name: "AGENTS.md", template: scaffoldAgents },
+	{ name: "CRON.md", template: scaffoldCron },
+];
 
 // --- Project info ---
 
@@ -53,11 +112,12 @@ export interface ProjectInfo {
 	aboutPath: string;
 	files: string[];
 	aboutRaw: string | null;
+	isLinked: boolean;
+	linkedTo?: string;
 }
 
 /**
  * Parse ABOUT.md for structured fields.
- * Returns name, status, description extracted from the markdown.
  */
 export function parseAbout(content: string, fallbackName: string): { name: string; status: string; description: string } {
 	let name = fallbackName;
@@ -82,7 +142,7 @@ export function parseAbout(content: string, fallbackName: string): { name: strin
 // --- Core operations ---
 
 /**
- * Scan all project directories, read each ABOUT.md, return structured info.
+ * Scan all project directories (including symlinks), read each ABOUT.md, return structured info.
  */
 export function listProjects(config: ProjectsConfig): ProjectInfo[] {
 	const { projectsDir } = config;
@@ -97,10 +157,31 @@ export function listProjects(config: ProjectsConfig): ProjectInfo[] {
 	const projects: ProjectInfo[] = [];
 
 	for (const entry of entries) {
-		if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+		if (entry.name.startsWith(".")) continue;
 
-		const projectDir = path.join(projectsDir, entry.name);
-		const aboutPath = path.join(projectDir, "ABOUT.md");
+		const entryPath = path.join(projectsDir, entry.name);
+		let isDir = entry.isDirectory();
+		let isLinked = false;
+		let linkedTo: string | undefined;
+
+		if (!isDir && entry.isSymbolicLink()) {
+			try {
+				const realPath = fs.realpathSync(entryPath);
+				const stat = fs.statSync(realPath);
+				isDir = stat.isDirectory();
+				if (isDir) {
+					isLinked = true;
+					linkedTo = realPath;
+				}
+			} catch {
+				continue; // broken symlink
+			}
+		}
+
+		if (!isDir) continue;
+
+		const resolvedDir = isLinked ? linkedTo! : entryPath;
+		const aboutPath = path.join(resolvedDir, "ABOUT.md");
 		const aboutRaw = readFileSafe(aboutPath);
 
 		const { name, status, description } = aboutRaw
@@ -109,17 +190,17 @@ export function listProjects(config: ProjectsConfig): ProjectInfo[] {
 
 		let files: string[] = [];
 		try {
-			files = fs.readdirSync(projectDir).filter((f) => !f.startsWith(".")).sort();
+			files = fs.readdirSync(resolvedDir).filter((f) => !f.startsWith(".")).sort();
 		} catch {}
 
-		projects.push({ slug: entry.name, name, status, description, aboutPath, files, aboutRaw });
+		projects.push({ slug: entry.name, name, status, description, aboutPath, files, aboutRaw, isLinked, linkedTo });
 	}
 
 	return projects.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 /**
- * Create a new project directory with scaffolded files.
+ * Create a new project directory with all scaffolded files.
  */
 export function createProject(
 	config: ProjectsConfig,
@@ -138,58 +219,62 @@ export function createProject(
 	fs.mkdirSync(projectDir, { recursive: true });
 
 	const created: string[] = [];
-
-	// ABOUT.md — the identity file
-	const about = [
-		`# ${name}`,
-		"",
-		"## Status",
-		"active",
-		"",
-		"## Description",
-		description || "_Add a description_",
-		"",
-		"## Key Files",
-		"_Add important file paths here_",
-		"",
-		"## Context",
-		"_Add any context another LLM would need to work on this project_",
-		"",
-	].join("\n");
-	fs.writeFileSync(path.join(projectDir, "ABOUT.md"), about, "utf-8");
-	created.push("ABOUT.md");
-
-	// MEMORY.md — project-specific memory
-	const memory = [
-		`# ${name} — Memory`,
-		"",
-		"Project-specific decisions, facts, and preferences.",
-		"",
-	].join("\n");
-	fs.writeFileSync(path.join(projectDir, "MEMORY.md"), memory, "utf-8");
-	created.push("MEMORY.md");
-
-	// AGENTS.md — project-specific rules
-	const agents = [
-		`# ${name} — Agent Rules`,
-		"",
-		"Project-specific behavioral rules and conventions.",
-		"",
-	].join("\n");
-	fs.writeFileSync(path.join(projectDir, "AGENTS.md"), agents, "utf-8");
-	created.push("AGENTS.md");
-
-	// CRON.md — scheduled tasks
-	const cron = [`# ${name} — Scheduled Tasks`, "", "_No scheduled tasks yet._", ""].join("\n");
-	fs.writeFileSync(path.join(projectDir, "CRON.md"), cron, "utf-8");
-	created.push("CRON.md");
+	for (const sf of SCAFFOLD_FILES) {
+		fs.writeFileSync(path.join(projectDir, sf.name), sf.template(name, description), "utf-8");
+		created.push(sf.name);
+	}
 
 	return { slug, projectDir, created };
 }
 
 /**
+ * Link an existing directory as a project.
+ * Creates a symlink in projectsDir and scaffolds missing files in the target directory.
+ */
+export function linkProject(
+	config: ProjectsConfig,
+	name: string,
+	targetPath: string,
+	description?: string,
+): { slug: string; linkedTo: string; created: string[]; skipped: string[] } {
+	const slug = slugify(name);
+	if (!slug) throw new Error("Invalid project name — couldn't generate a slug");
+
+	const resolvedTarget = path.resolve(targetPath);
+
+	if (!fs.existsSync(resolvedTarget)) {
+		throw new Error(`Path does not exist: ${targetPath}`);
+	}
+	if (!fs.statSync(resolvedTarget).isDirectory()) {
+		throw new Error(`Not a directory: ${targetPath}`);
+	}
+
+	const linkPath = path.join(config.projectsDir, slug);
+	if (fs.existsSync(linkPath)) {
+		throw new Error(`Project already exists: ${slug}/`);
+	}
+
+	fs.mkdirSync(config.projectsDir, { recursive: true });
+	fs.symlinkSync(resolvedTarget, linkPath);
+
+	const created: string[] = [];
+	const skipped: string[] = [];
+
+	for (const sf of SCAFFOLD_FILES) {
+		const filePath = path.join(resolvedTarget, sf.name);
+		if (fs.existsSync(filePath)) {
+			skipped.push(sf.name);
+		} else {
+			fs.writeFileSync(filePath, sf.template(name, description), "utf-8");
+			created.push(sf.name);
+		}
+	}
+
+	return { slug, linkedTo: resolvedTarget, created, skipped };
+}
+
+/**
  * Build a compact projects summary for system prompt injection.
- * One line per project — name, status, description, slug.
  */
 export function buildProjectsSummary(config: ProjectsConfig): string {
 	const projects = listProjects(config);
@@ -210,16 +295,15 @@ export function buildProjectsSummary(config: ProjectsConfig): string {
 }
 
 /**
- * Read a file from a project directory.
+ * Read a file from a project directory (follows symlinks).
  */
 export function readProjectFile(
 	config: ProjectsConfig,
 	project: string,
 	file?: string,
 ): { content: string; filePath: string; relativePath: string } | null {
-	const projectDir = path.join(config.projectsDir, project);
 	const fileName = file || "ABOUT.md";
-	const filePath = safeResolve(config.projectsDir, project, fileName);
+	const filePath = resolveProjectFile(config.projectsDir, project, fileName);
 
 	if (!filePath) return null;
 
@@ -230,7 +314,7 @@ export function readProjectFile(
 }
 
 /**
- * Write or append to a file in a project directory.
+ * Write or append to a file in a project directory (follows symlinks).
  */
 export function updateProjectFile(
 	config: ProjectsConfig,
@@ -239,12 +323,19 @@ export function updateProjectFile(
 	file?: string,
 	mode?: "overwrite" | "append",
 ): { filePath: string; relativePath: string } {
-	const projectDir = path.join(config.projectsDir, project);
 	const fileName = file || "ABOUT.md";
-	const filePath = safeResolve(config.projectsDir, project, fileName);
 
+	// Check the project dir exists first (resolve symlink)
+	const projectEntry = path.join(config.projectsDir, project);
+	try {
+		const realDir = fs.realpathSync(projectEntry);
+		if (!fs.statSync(realDir).isDirectory()) throw new Error();
+	} catch {
+		throw new Error(`Project not found: ${project}`);
+	}
+
+	const filePath = resolveProjectFile(config.projectsDir, project, fileName);
 	if (!filePath) throw new Error("Invalid path — traversal detected");
-	if (!fs.existsSync(projectDir)) throw new Error(`Project not found: ${project}`);
 
 	const writeMode = mode || "overwrite";
 

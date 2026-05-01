@@ -26,6 +26,7 @@ import {
 	buildConfig,
 	buildProjectsSummary,
 	createProject,
+	linkProject,
 	listProjects,
 	readProjectFile,
 	updateProjectFile,
@@ -76,7 +77,9 @@ export default function (pi: ExtensionAPI) {
 				const statusLine = p.status !== "active" ? `**Status:** ${p.status}\n` : "";
 				const descLine = p.description ? `${p.description}\n` : "";
 				const filesLine = p.files.length > 0 ? `**Files:** ${p.files.join(", ")}\n` : "";
-				const pathLine = `**Path:** ${config.projectsDir}/${p.slug}/`;
+				const pathLine = p.isLinked
+					? `**Path:** ${p.linkedTo}/`
+					: `**Path:** ${config.projectsDir}/${p.slug}/`;
 				return `## ${p.name}\n${statusLine}${descLine}${filesLine}${pathLine}`;
 			});
 
@@ -86,6 +89,35 @@ export default function (pi: ExtensionAPI) {
 					count: projects.length,
 					projects: projects.map((p) => ({ slug: p.slug, name: p.name, status: p.status })),
 				},
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "project_link",
+		label: "Link Project",
+		description: [
+			"Link an existing directory as a project. Creates a symlink in the projects directory.",
+			"Scaffolds ABOUT.md, MEMORY.md, AGENTS.md, CRON.md inside the target — but only files that don't already exist.",
+			"Use this for existing repos and codebases. The original directory is not moved or copied.",
+		].join("\n"),
+		promptSnippet: "Link an existing directory as a project (scaffolds missing ABOUT.md, etc.)",
+		parameters: Type.Object({
+			name: Type.String({ description: "Project name (e.g. 'Jo Bot', 'LLM Proxy')" }),
+			path: Type.String({ description: "Absolute path to the existing directory" }),
+			description: Type.Optional(
+				Type.String({ description: "One-line project description" }),
+			),
+		}),
+		async execute(_toolCallId, params) {
+			const targetPath = params.path.replace(/^@/, ""); // strip leading @ from model quirks
+			const result = linkProject(config, params.name, targetPath, params.description);
+			const parts = [`Linked "${params.name}" → ${result.linkedTo}/`];
+			if (result.created.length > 0) parts.push(`Created: ${result.created.join(", ")}`);
+			if (result.skipped.length > 0) parts.push(`Skipped (already exist): ${result.skipped.join(", ")}`);
+			return {
+				content: [{ type: "text", text: parts.join("\n") }],
+				details: result,
 			};
 		},
 	});
@@ -101,6 +133,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, CRON.md",
 		promptGuidelines: [
 			"When a user starts a new project or mentions wanting to organize work around a topic, use project_create to scaffold it.",
+			"To register an existing repo/directory, use project_link instead — it won't clobber existing files.",
 			"Use project_update to maintain ABOUT.md as the project evolves — keep Key Files and Context sections current.",
 		],
 		parameters: Type.Object({

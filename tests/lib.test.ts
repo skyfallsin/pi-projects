@@ -11,6 +11,7 @@ import {
 	parseAbout,
 	listProjects,
 	createProject,
+	linkProject,
 	buildProjectsSummary,
 	readProjectFile,
 	updateProjectFile,
@@ -361,5 +362,150 @@ describe("updateProjectFile", () => {
 			() => updateProjectFile(config, "test", "evil", "../../etc/passwd"),
 			/traversal/,
 		);
+	});
+});
+
+describe("linkProject", () => {
+	let config: ProjectsConfig;
+	let cleanup: () => void;
+	let externalDir: string;
+
+	beforeEach(() => {
+		const tmp = tmpConfig();
+		config = tmp.config;
+		cleanup = tmp.cleanup;
+		// Create an external directory to link to
+		externalDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-projects-ext-")));
+	});
+
+	afterEach(() => {
+		cleanup();
+		fs.rmSync(externalDir, { recursive: true, force: true });
+	});
+
+	it("creates symlink and scaffolds all files", () => {
+		const result = linkProject(config, "My Repo", externalDir, "A linked repo");
+		assert.equal(result.slug, "my-repo");
+		assert.equal(result.linkedTo, externalDir);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "CRON.md"]);
+		assert.deepEqual(result.skipped, []);
+
+		// Symlink exists
+		const linkPath = path.join(config.projectsDir, "my-repo");
+		assert.ok(fs.lstatSync(linkPath).isSymbolicLink());
+		assert.equal(fs.readlinkSync(linkPath), externalDir);
+
+		// Files created in external dir
+		const about = fs.readFileSync(path.join(externalDir, "ABOUT.md"), "utf-8");
+		assert.ok(about.includes("# My Repo"));
+		assert.ok(about.includes("A linked repo"));
+	});
+
+	it("skips existing files", () => {
+		// Pre-create AGENTS.md in external dir
+		fs.writeFileSync(path.join(externalDir, "AGENTS.md"), "# Existing rules\n");
+		fs.writeFileSync(path.join(externalDir, "MEMORY.md"), "# Existing memory\n");
+
+		const result = linkProject(config, "With Existing", externalDir);
+		assert.deepEqual(result.created, ["ABOUT.md", "CRON.md"]);
+		assert.deepEqual(result.skipped, ["MEMORY.md", "AGENTS.md"]);
+
+		// Existing files NOT clobbered
+		const agents = fs.readFileSync(path.join(externalDir, "AGENTS.md"), "utf-8");
+		assert.equal(agents, "# Existing rules\n");
+	});
+
+	it("throws on duplicate project", () => {
+		linkProject(config, "My Repo", externalDir);
+		const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-projects-ext2-"));
+		try {
+			assert.throws(
+				() => linkProject(config, "My Repo", otherDir),
+				/already exists/,
+			);
+		} finally {
+			fs.rmSync(otherDir, { recursive: true, force: true });
+		}
+	});
+
+	it("throws on nonexistent path", () => {
+		assert.throws(
+			() => linkProject(config, "Bad", "/nonexistent/path"),
+			/does not exist/,
+		);
+	});
+
+	it("throws on file (not directory)", () => {
+		const filePath = path.join(externalDir, "file.txt");
+		fs.writeFileSync(filePath, "hi");
+		assert.throws(
+			() => linkProject(config, "Bad", filePath),
+			/Not a directory/,
+		);
+	});
+});
+
+describe("listProjects with symlinks", () => {
+	let config: ProjectsConfig;
+	let cleanup: () => void;
+	let externalDir: string;
+
+	beforeEach(() => {
+		const tmp = tmpConfig();
+		config = tmp.config;
+		cleanup = tmp.cleanup;
+		externalDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-projects-ext-")));
+	});
+
+	afterEach(() => {
+		cleanup();
+		fs.rmSync(externalDir, { recursive: true, force: true });
+	});
+
+	it("lists linked projects alongside regular ones", () => {
+		createProject(config, "Regular");
+		linkProject(config, "Linked", externalDir, "An external repo");
+
+		const projects = listProjects(config);
+		assert.equal(projects.length, 2);
+
+		const linked = projects.find(p => p.slug === "linked")!;
+		assert.ok(linked);
+		assert.equal(linked.isLinked, true);
+		assert.equal(linked.linkedTo, externalDir);
+		assert.equal(linked.name, "Linked");
+		assert.equal(linked.description, "An external repo");
+
+		const regular = projects.find(p => p.slug === "regular")!;
+		assert.ok(regular);
+		assert.equal(regular.isLinked, false);
+		assert.equal(regular.linkedTo, undefined);
+	});
+
+	it("handles broken symlinks gracefully", () => {
+		createProject(config, "Good");
+		// Create a broken symlink
+		fs.symlinkSync("/nonexistent/broken", path.join(config.projectsDir, "broken"));
+
+		const projects = listProjects(config);
+		assert.equal(projects.length, 1); // only the good one
+		assert.equal(projects[0].slug, "good");
+	});
+
+	it("reads files from linked projects", () => {
+		linkProject(config, "Ext", externalDir, "External project");
+
+		const result = readProjectFile(config, "ext");
+		assert.ok(result);
+		assert.ok(result.content.includes("# Ext"));
+		assert.ok(result.filePath.startsWith(externalDir));
+	});
+
+	it("updates files in linked projects", () => {
+		linkProject(config, "Ext", externalDir);
+
+		updateProjectFile(config, "ext", "new memory content", "MEMORY.md");
+		const content = fs.readFileSync(path.join(externalDir, "MEMORY.md"), "utf-8");
+		assert.equal(content, "new memory content");
 	});
 });
