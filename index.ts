@@ -35,6 +35,89 @@ import {
 const config = buildConfig();
 
 export default function (pi: ExtensionAPI) {
+	// --- Commands (user-facing, proxy to the same logic as tools) ---
+
+	pi.registerCommand("project-list", {
+		description: "List all projects with status, description, and files",
+		handler: async (_args, ctx) => {
+			const projects = listProjects(config);
+			if (projects.length === 0) {
+				ctx.ui.notify(`No projects in ${config.projectsDir}/`, "info");
+				return;
+			}
+			const lines = projects.map((p) => {
+				const status = p.status !== "active" ? ` (${p.status})` : "";
+				const desc = p.description ? ` — ${p.description}` : "";
+				const loc = p.isLinked ? p.linkedTo : `${config.projectsDir}/${p.slug}`;
+				return `**${p.name}**${status}${desc}\n  \`${loc}/\``;
+			});
+			ctx.ui.notify(lines.join("\n\n"), "info");
+		},
+	});
+
+	pi.registerCommand("project-create", {
+		description: "Create a new project: /project-create Name — optional description",
+		handler: async (args, ctx) => {
+			if (!args?.trim()) {
+				if (!ctx.hasUI) return;
+				const input = await ctx.ui.input("Project name:");
+				if (!input) return;
+				args = input;
+			}
+			const [name, ...descParts] = args.split(" — ");
+			const description = descParts.join(" — ").trim() || undefined;
+			try {
+				const result = createProject(config, name.trim(), description);
+				ctx.ui.notify(`Created "${name.trim()}" at ${result.projectDir}/\nFiles: ${result.created.join(", ")}`, "info");
+			} catch (e: any) {
+				ctx.ui.notify(e.message, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("project-link", {
+		description: "Link an existing directory: /project-link Name /path/to/dir",
+		handler: async (args, ctx) => {
+			if (!args?.trim()) {
+				ctx.ui.notify("Usage: /project-link Name /absolute/path/to/dir", "error");
+				return;
+			}
+			// Parse: everything before the last path-like token is the name
+			const match = args.match(/^(.+?)\s+(\/\S+)$/);
+			if (!match) {
+				ctx.ui.notify("Usage: /project-link Name /absolute/path/to/dir", "error");
+				return;
+			}
+			const [, name, targetPath] = match;
+			try {
+				const result = linkProject(config, name.trim(), targetPath.trim());
+				const parts = [`Linked "${name.trim()}" → ${result.linkedTo}/`];
+				if (result.created.length > 0) parts.push(`Created: ${result.created.join(", ")}`);
+				if (result.skipped.length > 0) parts.push(`Skipped: ${result.skipped.join(", ")}`);
+				ctx.ui.notify(parts.join("\n"), "info");
+			} catch (e: any) {
+				ctx.ui.notify(e.message, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("project-read", {
+		description: "Read a project file: /project-read slug [file]",
+		handler: async (args, ctx) => {
+			if (!args?.trim()) {
+				ctx.ui.notify("Usage: /project-read slug [file]", "error");
+				return;
+			}
+			const [project, file] = args.trim().split(/\s+/);
+			const result = readProjectFile(config, project, file);
+			if (!result) {
+				ctx.ui.notify(`Not found: ${project}/${file || "ABOUT.md"}`, "error");
+				return;
+			}
+			ctx.ui.notify(`**${result.relativePath}**\n\n${result.content}`, "info");
+		},
+	});
+
 	// --- Context injection: compact projects summary in every prompt ---
 
 	pi.on("before_agent_start", async (event) => {
