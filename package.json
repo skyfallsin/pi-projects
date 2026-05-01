@@ -1,5 +1,5 @@
 {
-  "name": "@askjo/pi-projects",
+  "name": "pi-projects",
   "version": "1.0.0",
   "description": "Self-contained project directories for the pi coding agent. Each project gets ABOUT.md, MEMORY.md, AGENTS.md, CRON.md — extractable and usable by any LLM.",
   "main": "index.ts",
@@ -16,11 +16,11 @@
   "scripts": {
     "test": "node --import tsx --test tests/*.test.ts"
   },
-  "author": "jo-inc",
+  "author": "skyfallsin",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jo-inc/pi-projects.git"
+    "url": "https://github.com/skyfallsin/pi-projects.git"
   },
   "pi": {
     "extensions": [

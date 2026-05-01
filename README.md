@@ -81,13 +81,13 @@ The `Status`, `Description`, and heading are parsed automatically for the summar
 ## Installation
 
 ```bash
-pi install git:github.com/jo-inc/pi-projects
+pi install git:github.com/skyfallsin/pi-projects
 ```
 
 ## Related
 
-- **[pi-mem](https://github.com/jo-inc/pi-mem)** — Memory system (MEMORY.md, daily logs, scratchpad)
-- **[pi-reflect](https://github.com/jo-inc/pi-reflect)** — Self-improving reflection on behavioral files
+- **[pi-mem](https://github.com/skyfallsin/pi-mem)** — Memory system (MEMORY.md, daily logs, scratchpad)
+- **[pi-reflect](https://github.com/skyfallsin/pi-reflect)** — Self-improving reflection on behavioral files
 
 ## License
 
