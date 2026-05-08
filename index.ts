@@ -210,14 +210,21 @@ export default function (pi: ExtensionAPI) {
 		label: "Create Project",
 		description: [
 			"Create a new self-contained project directory with scaffolded files.",
-			"Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), CRON.md (scheduled tasks).",
+			config.cronMode === "cycles"
+				? "Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), cycles/ (recurring research tasks)."
+				: "Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), CRON.md (scheduled tasks).",
 			"Each project folder is self-contained — extractable and immediately usable by any LLM.",
 		].join("\n"),
-		promptSnippet: "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, CRON.md",
+		promptSnippet: config.cronMode === "cycles"
+			? "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, cycles/"
+			: "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, CRON.md",
 		promptGuidelines: [
 			"When a user starts a new project or mentions wanting to organize work around a topic, use project_create to scaffold it.",
 			"To register an existing repo/directory, use project_link instead — it won't clobber existing files.",
 			"Use project_update to maintain ABOUT.md as the project evolves — keep Key Files and Context sections current.",
+			...(config.cronMode === "cycles" ? [
+				"Projects get a cycles/ directory for recurring autonomous research. To set up a cycle, write a cycle.json (with \"agent\": true) and cycle.md (task prompt) inside cycles/{theme-name}/.",
+			] : []),
 		],
 		parameters: Type.Object({
 			name: Type.String({ description: "Project name (e.g. 'My Website', 'Data Pipeline')" }),

@@ -509,3 +509,67 @@ describe("listProjects with symlinks", () => {
 		assert.equal(content, "new memory content");
 	});
 });
+
+describe("cycles mode", () => {
+	let tmpDir: string;
+	let cyclesConfig: ProjectsConfig;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-projects-cycles-"));
+		cyclesConfig = { projectsDir: tmpDir, cronMode: "cycles" };
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("createProject scaffolds cycles/ instead of CRON.md", () => {
+		const result = createProject(cyclesConfig, "Research Dogs", "Find hypoallergenic breeds");
+		assert.ok(result.created.includes("ABOUT.md"));
+		assert.ok(result.created.includes("MEMORY.md"));
+		assert.ok(result.created.includes("AGENTS.md"));
+		assert.ok(result.created.includes("cycles/"));
+		assert.ok(!result.created.includes("CRON.md"));
+
+		// Verify directory exists
+		assert.ok(fs.existsSync(path.join(result.projectDir, "cycles")));
+		assert.ok(fs.statSync(path.join(result.projectDir, "cycles")).isDirectory());
+		// Verify no CRON.md
+		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
+	});
+
+	it("linkProject scaffolds cycles/ instead of CRON.md", () => {
+		const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-ext-"));
+		try {
+			const result = linkProject(cyclesConfig, "Linked", extDir, "A linked project");
+			assert.ok(result.created.includes("cycles/"));
+			assert.ok(!result.created.includes("CRON.md"));
+			assert.ok(fs.existsSync(path.join(extDir, "cycles")));
+			assert.ok(!fs.existsSync(path.join(extDir, "CRON.md")));
+		} finally {
+			fs.rmSync(extDir, { recursive: true, force: true });
+		}
+	});
+
+	it("linkProject skips cycles/ if already exists", () => {
+		const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-ext-"));
+		fs.mkdirSync(path.join(extDir, "cycles"));
+		try {
+			const result = linkProject(cyclesConfig, "Linked2", extDir);
+			assert.ok(result.skipped.includes("cycles/"));
+			assert.ok(!result.created.includes("cycles/"));
+		} finally {
+			fs.rmSync(extDir, { recursive: true, force: true });
+		}
+	});
+
+	it("default config uses cron.md mode", () => {
+		const defaultConfig = buildConfig({ HOME: tmpDir });
+		assert.equal(defaultConfig.cronMode, "cron.md");
+	});
+
+	it("PI_PROJECTS_CRON_MODE=cycles enables cycles mode", () => {
+		const cfg = buildConfig({ HOME: tmpDir, PI_PROJECTS_CRON_MODE: "cycles" });
+		assert.equal(cfg.cronMode, "cycles");
+	});
+});

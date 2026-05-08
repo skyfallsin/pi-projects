@@ -9,12 +9,15 @@ import * as path from "node:path";
 
 export interface ProjectsConfig {
 	projectsDir: string;
+	/** When "cycles", scaffold cycles/ directory instead of CRON.md. Default: "cron.md". */
+	cronMode: "cron.md" | "cycles";
 }
 
 export function buildConfig(env: Record<string, string | undefined> = process.env): ProjectsConfig {
 	const memoryDir = env.PI_MEMORY_DIR ?? path.join(env.HOME ?? "~", ".pi", "agent", "memory");
 	const projectsDir = env.PI_PROJECTS_DIR ?? path.join(memoryDir, "projects");
-	return { projectsDir };
+	const cronMode = env.PI_PROJECTS_CRON_MODE === "cycles" ? "cycles" as const : "cron.md" as const;
+	return { projectsDir, cronMode };
 }
 
 // --- Helpers ---
@@ -100,6 +103,12 @@ const SCAFFOLD_FILES: { name: string; template: (name: string, desc?: string) =>
 	{ name: "MEMORY.md", template: scaffoldMemory },
 	{ name: "AGENTS.md", template: scaffoldAgents },
 	{ name: "CRON.md", template: scaffoldCron },
+];
+
+const SCAFFOLD_FILES_CYCLES: { name: string; template: (name: string, desc?: string) => string }[] = [
+	{ name: "ABOUT.md", template: scaffoldAbout },
+	{ name: "MEMORY.md", template: scaffoldMemory },
+	{ name: "AGENTS.md", template: scaffoldAgents },
 ];
 
 // --- Project info ---
@@ -218,10 +227,17 @@ export function createProject(
 
 	fs.mkdirSync(projectDir, { recursive: true });
 
+	const files = config.cronMode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
 	const created: string[] = [];
-	for (const sf of SCAFFOLD_FILES) {
+	for (const sf of files) {
 		fs.writeFileSync(path.join(projectDir, sf.name), sf.template(name, description), "utf-8");
 		created.push(sf.name);
+	}
+
+	// In cycles mode, create the cycles/ directory
+	if (config.cronMode === "cycles") {
+		fs.mkdirSync(path.join(projectDir, "cycles"), { recursive: true });
+		created.push("cycles/");
 	}
 
 	return { slug, projectDir, created };
@@ -257,16 +273,28 @@ export function linkProject(
 	fs.mkdirSync(config.projectsDir, { recursive: true });
 	fs.symlinkSync(resolvedTarget, linkPath);
 
+	const files = config.cronMode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
 	const created: string[] = [];
 	const skipped: string[] = [];
 
-	for (const sf of SCAFFOLD_FILES) {
+	for (const sf of files) {
 		const filePath = path.join(resolvedTarget, sf.name);
 		if (fs.existsSync(filePath)) {
 			skipped.push(sf.name);
 		} else {
 			fs.writeFileSync(filePath, sf.template(name, description), "utf-8");
 			created.push(sf.name);
+		}
+	}
+
+	// In cycles mode, ensure cycles/ directory exists
+	if (config.cronMode === "cycles") {
+		const cyclesDir = path.join(resolvedTarget, "cycles");
+		if (fs.existsSync(cyclesDir)) {
+			skipped.push("cycles/");
+		} else {
+			fs.mkdirSync(cyclesDir, { recursive: true });
+			created.push("cycles/");
 		}
 	}
 
