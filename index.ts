@@ -120,13 +120,14 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Context injection: compact projects summary in every prompt ---
 
-	pi.on("before_agent_start", async (event) => {
+	// Inject project summary as a trailing system message (not in the main system prompt).
+	// This keeps the system prompt byte-stable across sessions for KV cache hits.
+	pi.on("context", async (event) => {
 		const summary = buildProjectsSummary(config);
 		if (!summary) return;
 
-		return {
-			systemPrompt: event.systemPrompt + `\n\n## Projects\n${summary}`,
-		};
+		const messages = [...event.messages, { role: "system", content: `## Projects\n${summary}` }];
+		return { messages };
 	});
 
 	// --- Tools ---
