@@ -529,12 +529,23 @@ describe("cycles mode", () => {
 		assert.ok(result.created.includes("MEMORY.md"));
 		assert.ok(result.created.includes("AGENTS.md"));
 		assert.ok(result.created.includes("cycles/"));
+		assert.ok(result.created.includes("cycles/main/"));
 		assert.ok(!result.created.includes("CRON.md"));
 
-		// Verify directory exists
 		assert.ok(fs.existsSync(path.join(result.projectDir, "cycles")));
 		assert.ok(fs.statSync(path.join(result.projectDir, "cycles")).isDirectory());
-		// Verify no CRON.md
+		const cycleDir = path.join(result.projectDir, "cycles", "main");
+		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.md")));
+		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.json")));
+		assert.ok(fs.existsSync(path.join(cycleDir, "state.json")));
+		assert.ok(fs.existsSync(path.join(cycleDir, "notes.md")));
+		assert.ok(fs.statSync(path.join(cycleDir, "history")).isDirectory());
+		assert.equal(fs.statSync(path.join(cycleDir, "should-run.example.sh")).mode & 0o111, 0o111);
+		const cycleConfig = JSON.parse(fs.readFileSync(path.join(cycleDir, "cycle.json"), "utf-8"));
+		assert.equal(cycleConfig.agent, true);
+		assert.equal(cycleConfig.produces_cards, true);
+		assert.equal(cycleConfig.max_cards_per_run, 3);
+		assert.equal(cycleConfig.should_run, undefined);
 		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
 	});
 
@@ -543,21 +554,24 @@ describe("cycles mode", () => {
 		try {
 			const result = linkProject(cyclesConfig, "Linked", extDir, "A linked project");
 			assert.ok(result.created.includes("cycles/"));
+			assert.ok(result.created.includes("cycles/main/"));
 			assert.ok(!result.created.includes("CRON.md"));
-			assert.ok(fs.existsSync(path.join(extDir, "cycles")));
+			assert.ok(fs.existsSync(path.join(extDir, "cycles", "main", "cycle.md")));
 			assert.ok(!fs.existsSync(path.join(extDir, "CRON.md")));
 		} finally {
 			fs.rmSync(extDir, { recursive: true, force: true });
 		}
 	});
 
-	it("linkProject skips cycles/ if already exists", () => {
+	it("linkProject creates main cycle when cycles/ already exists", () => {
 		const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-ext-"));
 		fs.mkdirSync(path.join(extDir, "cycles"));
 		try {
 			const result = linkProject(cyclesConfig, "Linked2", extDir);
-			assert.ok(result.skipped.includes("cycles/"));
+			assert.ok(!result.skipped.includes("cycles/"));
 			assert.ok(!result.created.includes("cycles/"));
+			assert.ok(result.created.includes("cycles/main/"));
+			assert.ok(fs.existsSync(path.join(extDir, "cycles", "main", "cycle.md")));
 		} finally {
 			fs.rmSync(extDir, { recursive: true, force: true });
 		}

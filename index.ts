@@ -212,19 +212,19 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Create a new self-contained project directory with scaffolded files.",
 			config.cronMode === "cycles"
-				? "Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), cycles/ (recurring research tasks)."
+				? "Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), and a default runnable cycle in cycles/main/."
 				: "Creates: ABOUT.md (identity/context), MEMORY.md (project memory), AGENTS.md (project rules), CRON.md (scheduled tasks).",
 			"Each project folder is self-contained — extractable and immediately usable by any LLM.",
 		].join("\n"),
 		promptSnippet: config.cronMode === "cycles"
-			? "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, cycles/"
+			? "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, and cycles/main/"
 			: "Create a new self-contained project with ABOUT.md, MEMORY.md, AGENTS.md, CRON.md",
 		promptGuidelines: [
 			"When a user starts a new project or mentions wanting to organize work around a topic, use project_create to scaffold it.",
 			"To register an existing repo/directory, use project_link instead — it won't clobber existing files.",
 			"Use project_update to maintain ABOUT.md as the project evolves — keep Key Files and Context sections current.",
 			...(config.cronMode === "cycles" ? [
-				"Projects get a cycles/ directory for recurring autonomous research. To set up a cycle, write a cycle.json (with \"agent\": true) and cycle.md (task prompt) inside cycles/{theme-name}/.",
+				"Projects get a default runnable cycle in cycles/main/ for recurring autonomous research. Add extra cycles only when the user asks for separate recurring tasks.",
 			] : []),
 		],
 		parameters: Type.Object({

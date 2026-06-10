@@ -98,6 +98,62 @@ function scaffoldCron(name: string): string {
 	return `# ${name} — Scheduled Tasks\n\n_No scheduled tasks yet._\n`;
 }
 
+function scaffoldCycleMd(name: string, description?: string): string {
+	return [
+		`# ${name}`,
+		"",
+		"Monitor this project for meaningful changes and surface actionable updates.",
+		description ? `Project focus: ${description}` : "",
+		"",
+		"Look for new, actionable, or time-sensitive findings related to this project. If nothing changed, respond with [NO_DELIVERY].",
+		"",
+	].filter((line) => line !== "").join("\n") + "\n";
+}
+
+function scaffoldCycleJson(): string {
+	return JSON.stringify({
+		schedule: "hourly",
+		cadence_minutes: 60,
+		agent: true,
+		produces_cards: true,
+		delivery: "macos",
+		max_cards_per_run: 3,
+	}, null, 2) + "\n";
+}
+
+function scaffoldShouldRunExample(): string {
+	return `#!/usr/bin/env bash
+# Optional per-cycle guard. To enable it, copy this file to should-run.sh,
+# make it executable, and add this to cycle.json:
+#
+#   "should_run": "./should-run.sh"
+#
+# Exit 0 to run the cycle. Exit 1 to skip without error.
+# Any other non-zero exit is logged as a guard error.
+
+set -euo pipefail
+
+exit 1
+`;
+}
+
+function scaffoldProjectCycle(projectDir: string, name: string, description: string | undefined, created: string[], skipped?: string[]): void {
+	const cycleName = "main";
+	const cycleDir = path.join(projectDir, "cycles", cycleName);
+	if (fs.existsSync(cycleDir)) {
+		skipped?.push(`cycles/${cycleName}/`);
+		return;
+	}
+
+	fs.mkdirSync(path.join(cycleDir, "history"), { recursive: true });
+	fs.writeFileSync(path.join(cycleDir, "cycle.md"), scaffoldCycleMd(name, description), "utf-8");
+	fs.writeFileSync(path.join(cycleDir, "cycle.json"), scaffoldCycleJson(), "utf-8");
+	fs.writeFileSync(path.join(cycleDir, "state.json"), JSON.stringify({ cycle_count: 0, last_cycle_utc: null }, null, 2) + "\n", "utf-8");
+	fs.writeFileSync(path.join(cycleDir, "notes.md"), "", "utf-8");
+	fs.writeFileSync(path.join(cycleDir, "should-run.example.sh"), scaffoldShouldRunExample(), { encoding: "utf-8", mode: 0o755 });
+	created.push(`cycles/${cycleName}/`);
+}
+
 const SCAFFOLD_FILES: { name: string; template: (name: string, desc?: string) => string }[] = [
 	{ name: "ABOUT.md", template: scaffoldAbout },
 	{ name: "MEMORY.md", template: scaffoldMemory },
@@ -234,10 +290,11 @@ export function createProject(
 		created.push(sf.name);
 	}
 
-	// In cycles mode, create the cycles/ directory
+	// In cycles mode, create the cycles/ directory and a default runnable project cycle.
 	if (config.cronMode === "cycles") {
 		fs.mkdirSync(path.join(projectDir, "cycles"), { recursive: true });
 		created.push("cycles/");
+		scaffoldProjectCycle(projectDir, name, description, created);
 	}
 
 	return { slug, projectDir, created };
@@ -287,14 +344,18 @@ export function linkProject(
 		}
 	}
 
-	// In cycles mode, ensure cycles/ directory exists
+	// In cycles mode, ensure cycles/ exists and add a default runnable project cycle.
 	if (config.cronMode === "cycles") {
 		const cyclesDir = path.join(resolvedTarget, "cycles");
-		if (fs.existsSync(cyclesDir)) {
-			skipped.push("cycles/");
-		} else {
+		const cyclesExisted = fs.existsSync(cyclesDir);
+		if (!cyclesExisted) {
 			fs.mkdirSync(cyclesDir, { recursive: true });
 			created.push("cycles/");
+		}
+		const createdCountBeforeCycle = created.length;
+		scaffoldProjectCycle(resolvedTarget, name, description, created, skipped);
+		if (cyclesExisted && created.length === createdCountBeforeCycle) {
+			skipped.push("cycles/");
 		}
 	}
 
