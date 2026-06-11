@@ -122,6 +122,7 @@ function scaffoldCycleMd(name: string, description?: string): string {
 		"- Raw dumps of project files or search results",
 		"",
 		"Do not treat \"not new\" as enough reason for no delivery on cycle #1. If the project has an unresolved concrete next action and no matching active feed card exists, deliver it once and remember its fingerprint in state.",
+		"If you write a section named \"Next action\" or \"Active next step\" in history, that same action MUST be returned as a feed-card item; do not end with [NO_DELIVERY] or {\"no_delivery\":true}.",
 		"If nothing useful changed, there is no unresolved next action, and there is no stale next action worth resurfacing, respond with [NO_DELIVERY].",
 		"Keep state compact: store only active items, fingerprints for delivered findings, and the latest project status.",
 		"",
