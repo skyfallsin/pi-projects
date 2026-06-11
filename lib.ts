@@ -113,6 +113,7 @@ function scaffoldCycleMd(name: string, description?: string): string {
 		"- New or changed actionable items related to this project",
 		"- Deadlines, stale blockers, unanswered requests, or decisions the user needs to make",
 		"- Fresh findings from email, chat, browsing, newsletters, docs, or project files that materially change the next step",
+		"- On the first run, the single best standing next action if the project is active and has not been shown yet",
 		"- A concise status card when the project is active but has not been visible recently and there is a useful next action",
 		"",
 		"## What to suppress",
@@ -120,7 +121,8 @@ function scaffoldCycleMd(name: string, description?: string): string {
 		"- Items already completed, dismissed, or already visible as active feed cards unless urgency or the next action changed",
 		"- Raw dumps of project files or search results",
 		"",
-		"If nothing useful changed and there is no stale next action worth resurfacing, respond with [NO_DELIVERY].",
+		"Do not treat \"not new\" as enough reason for no delivery on cycle #1. If the project has an unresolved concrete next action and no matching active feed card exists, deliver it once and remember its fingerprint in state.",
+		"If nothing useful changed, there is no unresolved next action, and there is no stale next action worth resurfacing, respond with [NO_DELIVERY].",
 		"Keep state compact: store only active items, fingerprints for delivered findings, and the latest project status.",
 		"",
 	].filter((line) => line !== "").join("\n") + "\n";
