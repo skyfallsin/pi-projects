@@ -116,11 +116,11 @@ describe("createProject", () => {
 
 	afterEach(() => cleanup());
 
-	it("creates project directory with all scaffolded files", () => {
+	it("creates project directory with all scaffolded files and a default cycle", () => {
 		const result = createProject(config, "My Website", "Personal portfolio");
 		assert.equal(result.slug, "my-website");
 		assert.ok(fs.existsSync(result.projectDir));
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "CRON.md"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "cycles/", "cycles/main/"]);
 
 		const about = fs.readFileSync(path.join(result.projectDir, "ABOUT.md"), "utf-8");
 		assert.ok(about.includes("# My Website"));
@@ -132,8 +132,10 @@ describe("createProject", () => {
 		const agents = fs.readFileSync(path.join(result.projectDir, "AGENTS.md"), "utf-8");
 		assert.ok(agents.includes("My Website — Agent Rules"));
 
-		const cron = fs.readFileSync(path.join(result.projectDir, "CRON.md"), "utf-8");
-		assert.ok(cron.includes("My Website — Scheduled Tasks"));
+		const cycleDir = path.join(result.projectDir, "cycles", "main");
+		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.md")));
+		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.json")));
+		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
 	});
 
 	it("throws on duplicate project", () => {
@@ -387,7 +389,7 @@ describe("linkProject", () => {
 		const result = linkProject(config, "My Repo", externalDir, "A linked repo");
 		assert.equal(result.slug, "my-repo");
 		assert.equal(result.linkedTo, externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "CRON.md"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "cycles/", "cycles/main/"]);
 		assert.deepEqual(result.skipped, []);
 
 		// Symlink exists
@@ -407,7 +409,7 @@ describe("linkProject", () => {
 		fs.writeFileSync(path.join(externalDir, "MEMORY.md"), "# Existing memory\n");
 
 		const result = linkProject(config, "With Existing", externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "CRON.md"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "cycles/", "cycles/main/"]);
 		assert.deepEqual(result.skipped, ["MEMORY.md", "AGENTS.md"]);
 
 		// Existing files NOT clobbered
@@ -577,13 +579,13 @@ describe("cycles mode", () => {
 		}
 	});
 
-	it("default config uses cron.md mode", () => {
+	it("default config uses cycles mode", () => {
 		const defaultConfig = buildConfig({ HOME: tmpDir });
-		assert.equal(defaultConfig.cronMode, "cron.md");
+		assert.equal(defaultConfig.cronMode, "cycles");
 	});
 
-	it("PI_PROJECTS_CRON_MODE=cycles enables cycles mode", () => {
-		const cfg = buildConfig({ HOME: tmpDir, PI_PROJECTS_CRON_MODE: "cycles" });
-		assert.equal(cfg.cronMode, "cycles");
+	it("PI_PROJECTS_CRON_MODE=cron.md enables legacy CRON.md mode", () => {
+		const cfg = buildConfig({ HOME: tmpDir, PI_PROJECTS_CRON_MODE: "cron.md" });
+		assert.equal(cfg.cronMode, "cron.md");
 	});
 });

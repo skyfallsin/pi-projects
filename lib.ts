@@ -9,15 +9,19 @@ import * as path from "node:path";
 
 export interface ProjectsConfig {
 	projectsDir: string;
-	/** When "cycles", scaffold cycles/ directory instead of CRON.md. Default: "cron.md". */
+	/** When "cron.md", scaffold legacy CRON.md instead of a runnable project cycle. Default: "cycles". */
 	cronMode: "cron.md" | "cycles";
 }
 
 export function buildConfig(env: Record<string, string | undefined> = process.env): ProjectsConfig {
 	const memoryDir = env.PI_MEMORY_DIR ?? path.join(env.HOME ?? "~", ".pi", "agent", "memory");
 	const projectsDir = env.PI_PROJECTS_DIR ?? path.join(memoryDir, "projects");
-	const cronMode = env.PI_PROJECTS_CRON_MODE === "cycles" ? "cycles" as const : "cron.md" as const;
+	const cronMode = env.PI_PROJECTS_CRON_MODE === "cron.md" ? "cron.md" as const : "cycles" as const;
 	return { projectsDir, cronMode };
+}
+
+function projectCronMode(config: ProjectsConfig): "cron.md" | "cycles" {
+	return config.cronMode === "cron.md" ? "cron.md" : "cycles";
 }
 
 // --- Helpers ---
@@ -102,10 +106,22 @@ function scaffoldCycleMd(name: string, description?: string): string {
 	return [
 		`# ${name}`,
 		"",
-		"Monitor this project for meaningful changes and surface actionable updates.",
+		"Actively keep this project moving. Review the project files, recent user activity, and any relevant catchup context for new blockers, deadlines, requests, research findings, or next actions.",
 		description ? `Project focus: ${description}` : "",
 		"",
-		"Look for new, actionable, or time-sensitive findings related to this project. If nothing changed, respond with [NO_DELIVERY].",
+		"## What to surface",
+		"- New or changed actionable items related to this project",
+		"- Deadlines, stale blockers, unanswered requests, or decisions the user needs to make",
+		"- Fresh findings from email, chat, browsing, newsletters, docs, or project files that materially change the next step",
+		"- A concise status card when the project is active but has not been visible recently and there is a useful next action",
+		"",
+		"## What to suppress",
+		"- Generic status recaps with no useful next action",
+		"- Items already completed, dismissed, or already visible as active feed cards unless urgency or the next action changed",
+		"- Raw dumps of project files or search results",
+		"",
+		"If nothing useful changed and there is no stale next action worth resurfacing, respond with [NO_DELIVERY].",
+		"Keep state compact: store only active items, fingerprints for delivered findings, and the latest project status.",
 		"",
 	].filter((line) => line !== "").join("\n") + "\n";
 }
@@ -113,11 +129,40 @@ function scaffoldCycleMd(name: string, description?: string): string {
 function scaffoldCycleJson(): string {
 	return JSON.stringify({
 		schedule: "hourly",
-		cadence_minutes: 60,
+		cadence_minutes: 180,
 		agent: true,
 		produces_cards: true,
 		delivery: "macos",
 		max_cards_per_run: 3,
+		context: [
+			{
+				type: "files",
+				label: "Project files",
+				paths: [
+					"{projectDir}/ABOUT.md",
+					"{projectDir}/MEMORY.md",
+					"{projectDir}/AGENTS.md",
+					"{projectDir}/notes.md",
+					"{projectDir}/NOTES.md",
+				],
+				maxBytes: 51200,
+			},
+			{
+				type: "files",
+				label: "Recent daily logs",
+				paths: ["{dataDir}/me/daily/*.md"],
+				maxBytes: 51200,
+				lookbackDays: 3,
+			},
+			{
+				type: "files",
+				label: "Recent catchup items changed since last project run",
+				paths: ["{dataDir}/me/catchup/*/*.md"],
+				maxBytes: 102400,
+				modifiedSinceLastRun: true,
+				excludeBasenames: ["INDEX.md"],
+			},
+		],
 	}, null, 2) + "\n";
 }
 
@@ -283,7 +328,8 @@ export function createProject(
 
 	fs.mkdirSync(projectDir, { recursive: true });
 
-	const files = config.cronMode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
+	const mode = projectCronMode(config);
+	const files = mode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
 	const created: string[] = [];
 	for (const sf of files) {
 		fs.writeFileSync(path.join(projectDir, sf.name), sf.template(name, description), "utf-8");
@@ -291,7 +337,7 @@ export function createProject(
 	}
 
 	// In cycles mode, create the cycles/ directory and a default runnable project cycle.
-	if (config.cronMode === "cycles") {
+	if (mode === "cycles") {
 		fs.mkdirSync(path.join(projectDir, "cycles"), { recursive: true });
 		created.push("cycles/");
 		scaffoldProjectCycle(projectDir, name, description, created);
@@ -330,7 +376,8 @@ export function linkProject(
 	fs.mkdirSync(config.projectsDir, { recursive: true });
 	fs.symlinkSync(resolvedTarget, linkPath);
 
-	const files = config.cronMode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
+	const mode = projectCronMode(config);
+	const files = mode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
 	const created: string[] = [];
 	const skipped: string[] = [];
 
@@ -345,7 +392,7 @@ export function linkProject(
 	}
 
 	// In cycles mode, ensure cycles/ exists and add a default runnable project cycle.
-	if (config.cronMode === "cycles") {
+	if (mode === "cycles") {
 		const cyclesDir = path.join(resolvedTarget, "cycles");
 		const cyclesExisted = fs.existsSync(cyclesDir);
 		if (!cyclesExisted) {
