@@ -28,11 +28,64 @@ import {
 	createProject,
 	linkProject,
 	listProjects,
+	parseAbout,
 	readProjectFile,
 	updateProjectFile,
 } from "./lib.ts";
 
 const config = buildConfig();
+
+export function isClosedProjectStatus(status: string | undefined): boolean {
+	return ["closed", "archived", "complete", "completed", "done"].includes((status || "").trim().toLowerCase());
+}
+
+export async function notifyProjectClosed(project: string, content: string, previousContent?: string | null): Promise<Record<string, unknown> | null> {
+	const next = parseAbout(content, project);
+	if (!isClosedProjectStatus(next.status)) return null;
+	if (previousContent) {
+		const previous = parseAbout(previousContent, project);
+		if (isClosedProjectStatus(previous.status)) return null;
+	}
+
+	const endpoint = (process.env.PI_PROJECT_CLOSE_HOOK_URL || "http://localhost:3002/projects/archive-sourced-items").trim();
+	const aliases = [next.name, project].filter(Boolean);
+	try {
+		const response = await fetch(endpoint, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				project_slug: project,
+				aliases,
+				archived_by: "project_close:pi-projects",
+			}),
+		});
+		const text = await response.text();
+		let body: Record<string, unknown> = {};
+		try {
+			body = text ? JSON.parse(text) : {};
+		} catch {
+			body = { raw: text };
+		}
+		if (!response.ok) {
+			return { success: false, status: response.status, error: text || response.statusText };
+		}
+		return body;
+	} catch (error) {
+		return { success: false, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+async function maybeRunProjectCloseHook(project: string, fileName: string | undefined, content: string, mode: string | undefined): Promise<Record<string, unknown> | null> {
+	const targetFile = fileName || "ABOUT.md";
+	if (targetFile !== "ABOUT.md" || (mode && mode !== "overwrite")) return null;
+	let previousContent: string | null = null;
+	try {
+		previousContent = readProjectFile(config, project, targetFile)?.content || null;
+	} catch {
+		previousContent = null;
+	}
+	return notifyProjectClosed(project, content, previousContent);
+}
 
 export default function (pi: ExtensionAPI) {
 	// --- Commands (user-facing, proxy to the same logic as tools) ---
@@ -295,6 +348,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_toolCallId, params) {
+			const closeHook = await maybeRunProjectCloseHook(params.project, params.file, params.content, params.mode);
 			const result = updateProjectFile(
 				config,
 				params.project,
@@ -302,9 +356,10 @@ export default function (pi: ExtensionAPI) {
 				params.file,
 				params.mode,
 			);
+			const hookText = closeHook ? `\nProject close hook: ${JSON.stringify(closeHook)}` : "";
 			return {
-				content: [{ type: "text", text: `Updated ${result.relativePath}` }],
-				details: { filePath: result.filePath, mode: params.mode || "overwrite" },
+				content: [{ type: "text", text: `Updated ${result.relativePath}${hookText}` }],
+				details: { filePath: result.filePath, mode: params.mode || "overwrite", closeHook },
 			};
 		},
 	});
