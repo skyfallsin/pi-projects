@@ -18,9 +18,9 @@
  *   - PI_MEMORY_DIR env var (default: ~/.pi/agent/memory/)
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai/compat";
 
 import {
 	buildConfig,
