@@ -102,6 +102,10 @@ function scaffoldCron(name: string): string {
 	return `# ${name} — Scheduled Tasks\n\n_No scheduled tasks yet._\n`;
 }
 
+function scaffoldBot(): string {
+	return JSON.stringify({ pinned: false }, null, 2) + "\n";
+}
+
 function scaffoldCycleMd(name: string, description?: string): string {
 	return [
 		`# ${name}`,
@@ -206,6 +210,7 @@ const SCAFFOLD_FILES: { name: string; template: (name: string, desc?: string) =>
 	{ name: "ABOUT.md", template: scaffoldAbout },
 	{ name: "MEMORY.md", template: scaffoldMemory },
 	{ name: "AGENTS.md", template: scaffoldAgents },
+	{ name: "BOT.json", template: scaffoldBot },
 	{ name: "CRON.md", template: scaffoldCron },
 ];
 
@@ -213,6 +218,7 @@ const SCAFFOLD_FILES_CYCLES: { name: string; template: (name: string, desc?: str
 	{ name: "ABOUT.md", template: scaffoldAbout },
 	{ name: "MEMORY.md", template: scaffoldMemory },
 	{ name: "AGENTS.md", template: scaffoldAgents },
+	{ name: "BOT.json", template: scaffoldBot },
 ];
 
 // --- Project info ---

@@ -120,7 +120,8 @@ describe("createProject", () => {
 		const result = createProject(config, "My Website", "Personal portfolio");
 		assert.equal(result.slug, "my-website");
 		assert.ok(fs.existsSync(result.projectDir));
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/", "cycles/main/"]);
+		assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.projectDir, "BOT.json"), "utf-8")), { pinned: false });
 
 		const about = fs.readFileSync(path.join(result.projectDir, "ABOUT.md"), "utf-8");
 		assert.ok(about.includes("# My Website"));
@@ -389,7 +390,7 @@ describe("linkProject", () => {
 		const result = linkProject(config, "My Repo", externalDir, "A linked repo");
 		assert.equal(result.slug, "my-repo");
 		assert.equal(result.linkedTo, externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/", "cycles/main/"]);
 		assert.deepEqual(result.skipped, []);
 
 		// Symlink exists
@@ -409,7 +410,7 @@ describe("linkProject", () => {
 		fs.writeFileSync(path.join(externalDir, "MEMORY.md"), "# Existing memory\n");
 
 		const result = linkProject(config, "With Existing", externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "BOT.json", "cycles/", "cycles/main/"]);
 		assert.deepEqual(result.skipped, ["MEMORY.md", "AGENTS.md"]);
 
 		// Existing files NOT clobbered
