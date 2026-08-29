@@ -9,7 +9,7 @@ import * as path from "node:path";
 
 export interface ProjectsConfig {
 	projectsDir: string;
-	/** When "cron.md", scaffold legacy CRON.md instead of a runnable project cycle. Default: "cycles". */
+	/** When "cron.md", scaffold legacy CRON.md. Default: "cycles" keeps an empty routines directory. */
 	cronMode: "cron.md" | "cycles";
 }
 
@@ -38,6 +38,14 @@ function readFileSafe(filePath: string): string | null {
 		return fs.readFileSync(filePath, "utf-8");
 	} catch {
 		return null;
+	}
+}
+
+function isRegularFile(filePath: string): boolean {
+	try {
+		return fs.statSync(filePath).isFile();
+	} catch {
+		return false;
 	}
 }
 
@@ -104,106 +112,6 @@ function scaffoldCron(name: string): string {
 
 function scaffoldBot(): string {
 	return JSON.stringify({ pinned: false }, null, 2) + "\n";
-}
-
-function scaffoldCycleMd(name: string, description?: string): string {
-	return [
-		`# ${name}`,
-		"",
-		"Actively keep this project moving. Review the project files, recent user activity, and any relevant catchup context for new blockers, deadlines, requests, research findings, or next actions.",
-		description ? `Project focus: ${description}` : "",
-		"",
-		"## What to surface",
-		"- New or changed actionable items related to this project",
-		"- Deadlines, stale blockers, unanswered requests, or decisions the user needs to make",
-		"- Fresh findings from email, chat, browsing, newsletters, docs, or project files that materially change the next step",
-		"- On the first run, the single best standing next action if the project is active and has not been shown yet",
-		"- A concise status card when the project is active but has not been visible recently and there is a useful next action",
-		"",
-		"## What to suppress",
-		"- Generic status recaps with no useful next action",
-		"- Items already completed, dismissed, or already visible as active feed cards unless urgency or the next action changed",
-		"- Raw dumps of project files or search results",
-		"",
-		"Do not treat \"not new\" as enough reason for no delivery on cycle #1. If the project has an unresolved concrete next action and no matching active feed card exists, deliver it once and remember its fingerprint in state.",
-		"If you write a section named \"Next action\" or \"Active next step\" in history, that same action MUST be returned as a feed-card item; do not end with [NO_DELIVERY] or {\"no_delivery\":true}.",
-		"If nothing useful changed, there is no unresolved next action, and there is no stale next action worth resurfacing, respond with [NO_DELIVERY].",
-		"Keep state compact: store only active items, fingerprints for delivered findings, and the latest project status.",
-		"",
-	].filter((line) => line !== "").join("\n") + "\n";
-}
-
-function scaffoldCycleJson(): string {
-	return JSON.stringify({
-		schedule: "hourly",
-		cadence_minutes: 180,
-		agent: true,
-		produces_cards: true,
-		delivery: "macos",
-		max_cards_per_run: 3,
-		context: [
-			{
-				type: "files",
-				label: "Project files",
-				paths: [
-					"{projectDir}/ABOUT.md",
-					"{projectDir}/MEMORY.md",
-					"{projectDir}/AGENTS.md",
-					"{projectDir}/notes.md",
-					"{projectDir}/NOTES.md",
-				],
-				maxBytes: 51200,
-			},
-			{
-				type: "files",
-				label: "Recent daily logs",
-				paths: ["{dataDir}/me/daily/*.md"],
-				maxBytes: 51200,
-				lookbackDays: 3,
-			},
-			{
-				type: "files",
-				label: "Recent catchup items changed since last project run",
-				paths: ["{dataDir}/me/catchup/*/*.md"],
-				maxBytes: 102400,
-				modifiedSinceLastRun: true,
-				excludeBasenames: ["INDEX.md"],
-			},
-		],
-	}, null, 2) + "\n";
-}
-
-function scaffoldShouldRunExample(): string {
-	return `#!/usr/bin/env bash
-# Optional per-cycle guard. To enable it, copy this file to should-run.sh,
-# make it executable, and add this to cycle.json:
-#
-#   "should_run": "./should-run.sh"
-#
-# Exit 0 to run the cycle. Exit 1 to skip without error.
-# Any other non-zero exit is logged as a guard error.
-
-set -euo pipefail
-
-exit 1
-`;
-}
-
-function scaffoldProjectCycle(projectDir: string, name: string, description: string | undefined, created: string[], skipped?: string[]): void {
-	const cycleName = "main";
-	const cycleDir = path.join(projectDir, "cycles", cycleName);
-	if (fs.existsSync(cycleDir)) {
-		skipped?.push(`cycles/${cycleName}/`);
-		return;
-	}
-
-	fs.mkdirSync(path.join(cycleDir, "history"), { recursive: true });
-	fs.writeFileSync(path.join(cycleDir, "cycle.md"), scaffoldCycleMd(name, description), "utf-8");
-	fs.writeFileSync(path.join(cycleDir, "cycle.json"), scaffoldCycleJson(), "utf-8");
-	fs.writeFileSync(path.join(cycleDir, "state.json"), JSON.stringify({ cycle_count: 0, last_cycle_utc: null }, null, 2) + "\n", "utf-8");
-	fs.writeFileSync(path.join(cycleDir, "notes.md"), "", "utf-8");
-	fs.writeFileSync(path.join(cycleDir, "should-run.example.sh"), scaffoldShouldRunExample(), { encoding: "utf-8", mode: 0o755 });
-	created.push(`cycles/${cycleName}/`);
 }
 
 const SCAFFOLD_FILES: { name: string; template: (name: string, desc?: string) => string }[] = [
@@ -301,11 +209,13 @@ export function listProjects(config: ProjectsConfig): ProjectInfo[] {
 
 		const resolvedDir = isLinked ? linkedTo! : entryPath;
 		const aboutPath = path.join(resolvedDir, "ABOUT.md");
+		if (!isRegularFile(aboutPath) || !isRegularFile(path.join(resolvedDir, "BOT.json"))) {
+			continue;
+		}
 		const aboutRaw = readFileSafe(aboutPath);
+		if (aboutRaw === null) continue;
 
-		const { name, status, description } = aboutRaw
-			? parseAbout(aboutRaw, entry.name)
-			: { name: entry.name, status: "active", description: "" };
+		const { name, status, description } = parseAbout(aboutRaw, entry.name);
 
 		let files: string[] = [];
 		try {
@@ -345,11 +255,10 @@ export function createProject(
 		created.push(sf.name);
 	}
 
-	// In cycles mode, create the cycles/ directory and a default runnable project cycle.
+	// In cycles mode, create an empty routines directory. Routines are created explicitly.
 	if (mode === "cycles") {
 		fs.mkdirSync(path.join(projectDir, "cycles"), { recursive: true });
 		created.push("cycles/");
-		scaffoldProjectCycle(projectDir, name, description, created);
 	}
 
 	return { slug, projectDir, created };
@@ -400,18 +309,14 @@ export function linkProject(
 		}
 	}
 
-	// In cycles mode, ensure cycles/ exists and add a default runnable project cycle.
+	// In cycles mode, ensure the routines directory exists. Routines are created explicitly.
 	if (mode === "cycles") {
 		const cyclesDir = path.join(resolvedTarget, "cycles");
-		const cyclesExisted = fs.existsSync(cyclesDir);
-		if (!cyclesExisted) {
+		if (fs.existsSync(cyclesDir)) {
+			skipped.push("cycles/");
+		} else {
 			fs.mkdirSync(cyclesDir, { recursive: true });
 			created.push("cycles/");
-		}
-		const createdCountBeforeCycle = created.length;
-		scaffoldProjectCycle(resolvedTarget, name, description, created, skipped);
-		if (cyclesExisted && created.length === createdCountBeforeCycle) {
-			skipped.push("cycles/");
 		}
 	}
 

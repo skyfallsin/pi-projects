@@ -116,11 +116,11 @@ describe("createProject", () => {
 
 	afterEach(() => cleanup());
 
-	it("creates project directory with all scaffolded files and a default cycle", () => {
+	it("creates project directory with scaffolded files and no routine", () => {
 		const result = createProject(config, "My Website", "Personal portfolio");
 		assert.equal(result.slug, "my-website");
 		assert.ok(fs.existsSync(result.projectDir));
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/"]);
 		assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.projectDir, "BOT.json"), "utf-8")), { pinned: false });
 
 		const about = fs.readFileSync(path.join(result.projectDir, "ABOUT.md"), "utf-8");
@@ -133,9 +133,8 @@ describe("createProject", () => {
 		const agents = fs.readFileSync(path.join(result.projectDir, "AGENTS.md"), "utf-8");
 		assert.ok(agents.includes("My Website — Agent Rules"));
 
-		const cycleDir = path.join(result.projectDir, "cycles", "main");
-		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.md")));
-		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.json")));
+		assert.ok(fs.existsSync(path.join(result.projectDir, "cycles")));
+		assert.deepEqual(fs.readdirSync(path.join(result.projectDir, "cycles")), []);
 		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
 	});
 
@@ -196,14 +195,12 @@ describe("listProjects", () => {
 		assert.equal(projects[1].slug, "beta");
 	});
 
-	it("lists projects without ABOUT.md", () => {
-		fs.mkdirSync(path.join(config.projectsDir, "bare-project"));
+	it("skips incomplete state-only directories", () => {
+		const stateOnlyDir = path.join(config.projectsDir, "state-only-copy", "cycles", "daily");
+		fs.mkdirSync(stateOnlyDir, { recursive: true });
+		fs.writeFileSync(path.join(stateOnlyDir, "state.json"), "{}\n");
 
-		const projects = listProjects(config);
-		assert.equal(projects.length, 1);
-		assert.equal(projects[0].slug, "bare-project");
-		assert.equal(projects[0].name, "bare-project"); // falls back to dir name
-		assert.equal(projects[0].aboutRaw, null);
+		assert.deepEqual(listProjects(config), []);
 	});
 
 	it("skips hidden directories", () => {
@@ -390,7 +387,7 @@ describe("linkProject", () => {
 		const result = linkProject(config, "My Repo", externalDir, "A linked repo");
 		assert.equal(result.slug, "my-repo");
 		assert.equal(result.linkedTo, externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "MEMORY.md", "AGENTS.md", "BOT.json", "cycles/"]);
 		assert.deepEqual(result.skipped, []);
 
 		// Symlink exists
@@ -410,7 +407,7 @@ describe("linkProject", () => {
 		fs.writeFileSync(path.join(externalDir, "MEMORY.md"), "# Existing memory\n");
 
 		const result = linkProject(config, "With Existing", externalDir);
-		assert.deepEqual(result.created, ["ABOUT.md", "BOT.json", "cycles/", "cycles/main/"]);
+		assert.deepEqual(result.created, ["ABOUT.md", "BOT.json", "cycles/"]);
 		assert.deepEqual(result.skipped, ["MEMORY.md", "AGENTS.md"]);
 
 		// Existing files NOT clobbered
@@ -526,55 +523,44 @@ describe("cycles mode", () => {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("createProject scaffolds cycles/ instead of CRON.md", () => {
+	it("createProject scaffolds an empty cycles/ directory instead of CRON.md", () => {
 		const result = createProject(cyclesConfig, "Research Dogs", "Find hypoallergenic breeds");
 		assert.ok(result.created.includes("ABOUT.md"));
 		assert.ok(result.created.includes("MEMORY.md"));
 		assert.ok(result.created.includes("AGENTS.md"));
 		assert.ok(result.created.includes("cycles/"));
-		assert.ok(result.created.includes("cycles/main/"));
+		assert.ok(!result.created.includes("cycles/main/"));
 		assert.ok(!result.created.includes("CRON.md"));
 
-		assert.ok(fs.existsSync(path.join(result.projectDir, "cycles")));
-		assert.ok(fs.statSync(path.join(result.projectDir, "cycles")).isDirectory());
-		const cycleDir = path.join(result.projectDir, "cycles", "main");
-		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.md")));
-		assert.ok(fs.existsSync(path.join(cycleDir, "cycle.json")));
-		assert.ok(fs.existsSync(path.join(cycleDir, "state.json")));
-		assert.ok(fs.existsSync(path.join(cycleDir, "notes.md")));
-		assert.ok(fs.statSync(path.join(cycleDir, "history")).isDirectory());
-		assert.equal(fs.statSync(path.join(cycleDir, "should-run.example.sh")).mode & 0o111, 0o111);
-		const cycleConfig = JSON.parse(fs.readFileSync(path.join(cycleDir, "cycle.json"), "utf-8"));
-		assert.equal(cycleConfig.agent, true);
-		assert.equal(cycleConfig.produces_cards, true);
-		assert.equal(cycleConfig.max_cards_per_run, 3);
-		assert.equal(cycleConfig.should_run, undefined);
+		const cyclesDir = path.join(result.projectDir, "cycles");
+		assert.ok(fs.existsSync(cyclesDir));
+		assert.ok(fs.statSync(cyclesDir).isDirectory());
+		assert.deepEqual(fs.readdirSync(cyclesDir), []);
 		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
 	});
 
-	it("linkProject scaffolds cycles/ instead of CRON.md", () => {
+	it("linkProject scaffolds an empty cycles/ directory instead of CRON.md", () => {
 		const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-ext-"));
 		try {
 			const result = linkProject(cyclesConfig, "Linked", extDir, "A linked project");
 			assert.ok(result.created.includes("cycles/"));
-			assert.ok(result.created.includes("cycles/main/"));
-			assert.ok(!result.created.includes("CRON.md"));
-			assert.ok(fs.existsSync(path.join(extDir, "cycles", "main", "cycle.md")));
+			assert.ok(!result.created.includes("cycles/main/"));
+			assert.ok(fs.existsSync(path.join(extDir, "cycles")));
+			assert.deepEqual(fs.readdirSync(path.join(extDir, "cycles")), []);
 			assert.ok(!fs.existsSync(path.join(extDir, "CRON.md")));
 		} finally {
 			fs.rmSync(extDir, { recursive: true, force: true });
 		}
 	});
 
-	it("linkProject creates main cycle when cycles/ already exists", () => {
+	it("linkProject leaves an existing cycles directory unchanged", () => {
 		const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-ext-"));
 		fs.mkdirSync(path.join(extDir, "cycles"));
 		try {
 			const result = linkProject(cyclesConfig, "Linked2", extDir);
-			assert.ok(!result.skipped.includes("cycles/"));
+			assert.ok(result.skipped.includes("cycles/"));
 			assert.ok(!result.created.includes("cycles/"));
-			assert.ok(result.created.includes("cycles/main/"));
-			assert.ok(fs.existsSync(path.join(extDir, "cycles", "main", "cycle.md")));
+			assert.ok(!fs.existsSync(path.join(extDir, "cycles", "main")));
 		} finally {
 			fs.rmSync(extDir, { recursive: true, force: true });
 		}
