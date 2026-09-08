@@ -138,12 +138,13 @@ describe("createProject", () => {
 		assert.ok(!fs.existsSync(path.join(result.projectDir, "CRON.md")));
 	});
 
-	it("throws on duplicate project", () => {
-		createProject(config, "My Website");
+	it("throws on duplicate project without overwriting its scaffold", () => {
+		const first = createProject(config, "My Website", "Original description");
 		assert.throws(
-			() => createProject(config, "My Website"),
+			() => createProject(config, "My Website", "Replacement description"),
 			/already exists/,
 		);
+		assert.ok(fs.readFileSync(path.join(first.projectDir, "ABOUT.md"), "utf-8").includes("Original description"));
 	});
 
 	it("throws on empty name", () => {

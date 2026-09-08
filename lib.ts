@@ -239,13 +239,19 @@ export function createProject(
 	const slug = slugify(name);
 	if (!slug) throw new Error("Invalid project name — couldn't generate a slug");
 
+	fs.mkdirSync(config.projectsDir, { recursive: true });
 	const projectDir = path.join(config.projectsDir, slug);
 
-	if (fs.existsSync(projectDir)) {
-		throw new Error(`Project already exists: ${slug}/`);
+	try {
+		// Do not use recursive creation here: it can make two concurrent creators
+		// both believe they own the same project and overwrite its scaffold.
+		fs.mkdirSync(projectDir);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+			throw new Error(`Project already exists: ${slug}/`);
+		}
+		throw error;
 	}
-
-	fs.mkdirSync(projectDir, { recursive: true });
 
 	const mode = projectCronMode(config);
 	const files = mode === "cycles" ? SCAFFOLD_FILES_CYCLES : SCAFFOLD_FILES;
