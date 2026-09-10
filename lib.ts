@@ -209,7 +209,13 @@ export function listProjects(config: ProjectsConfig): ProjectInfo[] {
 
 		const resolvedDir = isLinked ? linkedTo! : entryPath;
 		const aboutPath = path.join(resolvedDir, "ABOUT.md");
-		if (!isRegularFile(aboutPath) || !isRegularFile(path.join(resolvedDir, "BOT.json"))) {
+		// BOT.json was introduced after the original project scaffold. Keep fully
+		// scaffolded legacy projects discoverable, while still excluding partial
+		// directories left by interrupted creation.
+		const hasBotMetadata = isRegularFile(path.join(resolvedDir, "BOT.json"));
+		const hasLegacyScaffold = isRegularFile(path.join(resolvedDir, "MEMORY.md"))
+			&& isRegularFile(path.join(resolvedDir, "AGENTS.md"));
+		if (!isRegularFile(aboutPath) || (!hasBotMetadata && !hasLegacyScaffold)) {
 			continue;
 		}
 		const aboutRaw = readFileSafe(aboutPath);

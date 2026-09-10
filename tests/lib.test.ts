@@ -196,6 +196,24 @@ describe("listProjects", () => {
 		assert.equal(projects[1].slug, "beta");
 	});
 
+	it("lists a complete legacy scaffold without BOT.json", () => {
+		const legacyDir = path.join(config.projectsDir, "legacy-project");
+		fs.mkdirSync(legacyDir);
+		fs.writeFileSync(path.join(legacyDir, "ABOUT.md"), "# Legacy Project\n");
+		fs.writeFileSync(path.join(legacyDir, "MEMORY.md"), "# Legacy Project — Memory\n");
+		fs.writeFileSync(path.join(legacyDir, "AGENTS.md"), "# Legacy Project — Agent Rules\n");
+
+		assert.deepEqual(listProjects(config).map((project) => project.slug), ["legacy-project"]);
+	});
+
+	it("skips an incomplete directory with only ABOUT.md", () => {
+		const incompleteDir = path.join(config.projectsDir, "about-only");
+		fs.mkdirSync(incompleteDir);
+		fs.writeFileSync(path.join(incompleteDir, "ABOUT.md"), "# Incomplete\n");
+
+		assert.deepEqual(listProjects(config), []);
+	});
+
 	it("skips incomplete state-only directories", () => {
 		const stateOnlyDir = path.join(config.projectsDir, "state-only-copy", "cycles", "daily");
 		fs.mkdirSync(stateOnlyDir, { recursive: true });
